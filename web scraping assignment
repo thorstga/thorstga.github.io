@@ -1,0 +1,379 @@
+
+---
+title: "Lab 1: Scraping Web Pages"
+author:
+  - name: "Ethan Gaddy ^[Email: gaddye@miamioh.edu]"
+    affiliation: Farmer School of Business, Miami University
+  - name: "Sabrina Garcia-Salas ^[Email: garcias5@miamioh.edu]"
+    affiliation: Farmer School of Business, Miami University
+  - name: "Grace Thorstenson ^[Email: thorstga@miamioh.edu]"
+    affiliation: Farmer School of Business, Miami University
+date: "Spring 2022"
+output: 
+  html_document:
+    code_folding: show
+    code_download: TRUE
+    number_sections: TRUE
+    paged_df: TRUE
+    toc: TRUE
+    toc_float: TRUE
+    theme: readable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE,
+                      progress = FALSE,
+                      verbose = TRUE,
+                      cache = TRUE)
+```
+
+
+---
+
+# Required Packages
+```{r packages}
+# checking to see if the pacman package is installed + installing it if needed
+if(require(pacman)==FALSE) install.packages("pacman")
+pacman::p_load(tidyverse, rvest, magrittr)
+```
+
+
+---
+
+# Scraping the Miami University Found and Impounded Property Listing
+
+When you click on [Found and Impounded Property Listing](https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uk9AJOMODxS9fUgX_4vnEMj-Di7ulkTXWzPUmaHvHbaII63xmKmRu3VaBvOXrwQhtkOUlL9fxLMB/pubhtml?gid=1104208671&single=true) on the [Property - Lost, Found, Impounded Page](https://www.miamioh.edu/police/services/propertylostfoundimpounded/index.html), you will be taken to a Google Doc containing a table of lost and found items. 
+
+**Please scrape the table and print it out.** Your code should be self-contained in the code chunk below.
+
+```{r mu_lost_and_found}
+read_html("https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3uk9AJOMODxS9fUgX_4vnEMj-Di7ulkTXWzPUmaHvHbaII63xmKmRu3VaBvOXrwQhtkOUlL9fxLMB/pubhtml?gid=1104208671&single=true") %>%
+  html_elements("table > tbody") %>%
+  html_table(header = 1) %>%
+  extract2(1) -> lost_and_found
+
+lost_and_found = lost_and_found[-1,]
+lost_and_found = select(lost_and_found, -c(1))
+
+lost_and_found
+```
+
+
+---
+
+# Create a Table of all FSB Departmental Faculty/Staff
+
+Currently, the Farmer School of Business has the following academic departments:
+- [Accountancy](https://www.miamioh.edu/fsb/academics/accountancy/about/faculty-staff/index.html)  
+- [Economics](https://www.miamioh.edu/fsb/academics/economics/about/faculty-staff/index.html) 
+- [Entrepreneurship](https://www.miamioh.edu/fsb/academics/entrepreneurship/about/faculty-staff/index.html)  
+- [Finance](https://www.miamioh.edu/fsb/academics/finance/about/faculty-staff/index.html)
+- [Information Systems & Analytics](https://www.miamioh.edu/fsb/academics/isa/about/faculty-staff/index.html)  
+- [Marketing](https://www.miamioh.edu/fsb/academics/marketing/about/faculty-staff/index.html)  
+- [Management](https://www.miamioh.edu/fsb/academics/management/about/faculty-staff/index.html)  
+
+Using the code chunk below, please write code that will produce and print a **single tibble containing information on ALL departments and the following variables:** (a) department name, (b) faculty/staff's name, (c) faculty/staff's position, and (d) faculty/staff's website
+
+```{r fsb_faculty_staff}
+base_url = "https://www.miamioh.edu/fsb/academics/"
+
+end_url = '/about/faculty-staff/index.html'
+
+acc = paste0(base_url, "accountancy", end_url)
+eco = paste0(base_url, "economics", end_url)
+esp = paste0(base_url, "entrepreneurship", end_url)
+fin = paste0(base_url, "finance", end_url)
+isa = paste0(base_url, "isa", end_url)
+mkt = paste0(base_url, "marketing", end_url)
+mgt = paste0(base_url, "management", end_url)
+
+vector_urls = c(acc, eco, esp, fin, isa, mkt, mgt)
+
+
+scrape_faculty_site = function(x){
+  read_html(x) %>%
+    html_elements("div > main > section") %>%
+    html_table() %>%
+    extract2(1) %>%
+    select(-c(Picture)) -> results
+  
+  return(results)
+}
+
+all_sites = map_df(.x = vector_urls, .f = scrape_faculty_site)
+
+all_sites$link = if_else(
+  all_sites$Department %in% c("Accountancy"), acc, if_else(
+    all_sites$Department %in% c("Economics"), eco, if_else(
+      all_sites$Department %in% c("Entrepreneurship"), esp, if_else(
+        all_sites$Department %in% c("Finance"), fin, if_else(
+          all_sites$Department %in% c("Information Systems & Analytics"), isa, if_else(
+            all_sites$Department %in% c("Marketing"), mkt, if_else(
+              all_sites$Department %in% c("Management"), mgt, if_else(
+                all_sites$Department %in% c("First-Year Integrated Core"), "https://www.miamioh.edu/fsb/academics/fyic/faculty/index.html", "faculty works within Office of Dean"
+              ))))))))
+
+all_sites
+```
+
+
+---
+
+# Netflix Ratings on IMDb
+
+The most popular listings on Netflix are rated and reviews on [ImDb](https://www.imdb.com/search/title/?companies=co0144901). Based on this webpage and its following pages, please create a **tibble** that contains the following:
+
+- *Title:*  
+- *Years:*
+- *Age classification:*
+- *Duration:*
+- *Genres:*
+- *IMDb Rating:*
+- *1-2 Sentence Summary:*
+- *Stars:*
+- *Votes:*
+
+**Your tibble should contain a variable for the 9 items above for each of the 50 titles found on the page.** 
+
+```{r netflix_imdb_p1}
+imdb <- read_html("https://www.imdb.com/search/title/?companies=co0144901")
+
+summary_general_space <- html_elements(imdb, 'div.lister-item-content> p.text-muted') %>%
+  html_text2()
+summary = summary_general_space[seq(from = 2, to =100, by =2)]
+rm(summary_general_space)
+stars_general_space <- html_nodes(imdb, 'div.lister-item-content > p') %>%
+  html_text2()
+stars1 = stars_general_space[seq(from = 3, to =47, by =4)]
+stars2 = stars_general_space[seq(from = 50, to =154, by =4)]
+stars3 = stars_general_space[seq(from = 157, to =198, by =4)]
+stars = c(stars1, stars2, stars3)
+rm(stars_general_space, stars1, stars2, stars3)
+
+movies1 = tibble(
+  title = html_elements(imdb,'.lister-item-header a') %>% 
+    html_text2(),
+  years = html_elements(imdb, 'span.lister-item-year.text-muted.unbold') %>% 
+    html_text(),
+  age_classification = html_elements(imdb, 'span.certificate') %>%
+    html_text2(),
+  genre = html_elements(imdb, 'span.genre') %>%
+    html_text2() %>%
+    str_replace_all(pattern = "\\n", replacement = ""),
+  summary, 
+  stars
+)
+rm(stars, summary)
+
+movies2 = tibble(
+  duration = html_elements(imdb, 'span.runtime') %>%
+    html_text2(),
+  rating = html_elements(imdb, 'div > div.inline-block.ratings-imdb-rating') %>%
+    html_text2() %>%
+    str_replace_all(pattern = "\\n", replacement = ""),
+  votes = html_elements(imdb, 'p.sort-num_votes-visible') %>%
+    html_text2()
+)
+
+movies1
+movies2
+```
+
+---
+
+# Top 300 Netflix Ratings 
+
+Expand on the previous example to capture the top **300** titles on Netflix (i.e., the information across six pages).
+
+```{r netflix_imdb_p2}
+base_url = 'https://www.imdb.com/search/title/?companies=co0144901&start='
+end_url = '&ref_=adv_nxt'
+
+one = "https://www.imdb.com/search/title/?companies=co0144901"
+five_one = paste0(base_url, "51", end_url)
+one_zero_one = paste0(base_url, "101", end_url)
+one_five_one = paste0(base_url, "151", end_url)
+two_zero_one = paste0(base_url, "201", end_url)
+two_five_one = paste0(base_url, "251", end_url)
+
+vector_pages = c(one, five_one, one_zero_one, one_five_one, two_zero_one, two_five_one)
+
+rm(base_url, end_url, one, five_one, one_zero_one, one_five_one, two_zero_one, two_five_one)
+
+#start work on stars
+page1 <- read_html("https://www.imdb.com/search/title/?companies=co0144901")
+
+first_general_space <- html_nodes(page1, 'div.lister-item-content > p') %>%
+  html_text2()
+s11 = first_general_space[seq(from = 3, to =47, by =4)]
+s12 = first_general_space[seq(from = 50, to =154, by =4)]
+s13 = first_general_space[seq(from = 157, to =198, by =4)]
+stars1 = c(s11, s12, s13)
+rm(first_general_space, s11, s12, s13, page1)
+
+page2 <- read_html("https://www.imdb.com/search/title/?companies=co0144901&start=51&ref_=adv_nxt")
+
+scd_general_space <- html_nodes(page2, 'div.lister-item-content > p') %>%
+  html_text2()
+stars2 = scd_general_space[seq(from = 3, to =200, by =4)]
+rm(scd_general_space,page2)
+
+page3 <- read_html("https://www.imdb.com/search/title/?companies=co0144901&start=101&ref_=adv_nxt")
+
+trd_general_space <- html_nodes(page3, 'div.lister-item-content > p') %>%
+  html_text2()
+s31 = trd_general_space[seq(from = 3, to =51, by =4)]
+s32 = trd_general_space[seq(from = 54, to =54, by =4)]
+s33 = trd_general_space[seq(from = 57, to =117, by =4)]
+s34 = trd_general_space[seq(from = 120, to =128, by = 4)]
+s35 = trd_general_space[seq(from=131, to=198, by=4)]
+stars3 = c(s31, s32, s33,s34,s35)
+rm(trd_general_space, s31, s32, s33, s34, s35, page3)
+
+page4 <- read_html("https://www.imdb.com/search/title/?companies=co0144901&start=151&ref_=adv_nxt")
+
+frth_general_space <- html_nodes(page4, 'div.lister-item-content > p') %>%
+  html_text2()
+stars4 = frth_general_space[seq(from = 3, to =200, by =4)]
+rm(frth_general_space, page4)
+
+page5 <- read_html("https://www.imdb.com/search/title/?companies=co0144901&start=201&ref_=adv_nxt")
+
+fth_general_space <- html_nodes(page5, 'div.lister-item-content > p') %>%
+  html_text2()
+s51 = fth_general_space[seq(from = 3, to =127, by =4)]
+s52 =  fth_general_space[seq(from = 130, to =200, by =4)]
+stars5 = c(s51,s52 )
+
+rm(fth_general_space, s51, s52, page5)
+
+page6 <- read_html("https://www.imdb.com/search/title/?companies=co0144901&start=251&ref_=adv_nxt")
+
+sx_general_space <- html_nodes(page6, 'div.lister-item-content > p') %>%
+  html_text2()
+stars6 = sx_general_space[seq(from = 3, to =200, by =4)]
+
+rm(sx_general_space, page6)
+
+stars = tibble(stars_total = c(stars1, stars2, stars3, stars4, stars5, stars6))
+rm(stars1, stars2, stars3, stars4, stars5, stars6)
+#works for stars
+
+scrape_movie_site4 = function(x){
+  tibble(
+    read_html(x) %>%
+      html_elements('div.lister-item-content> p.text-muted') %>%
+      html_text2() 
+  ) -> movies4
+  
+  return(movies4)
+}
+
+summary_general_space = map_df(.x = vector_pages, .f = scrape_movie_site4)
+toDelete <- seq(2, nrow(summary_general_space), 2)
+summary <- summary_general_space[toDelete,]
+rm(summary_general_space, toDelete)
+#works for summary
+
+scrape_movie_site = function(x){
+    tibble(
+      read_html(x) %>%
+        html_elements('.lister-item-header a') %>% 
+        html_text2() -> title,
+      read_html(x) %>%
+        html_elements('span.lister-item-year.text-muted.unbold') %>% 
+        html_text() -> years,
+      read_html(x) %>%
+        html_elements('span.genre') %>%
+        html_text2() %>%
+        str_replace_all(pattern = "\\n", replacement = "") -> genre
+      ) -> movies1
+  
+  return(movies1)
+}
+
+movie_sites = map_df(.x = vector_pages, .f = scrape_movie_site)
+#works for title, years, genre
+
+movie_sites1 = bind_cols(movie_sites, summary, stars)
+#putting it all together
+rm(movie_sites, summary, stars)
+
+scrape_movie_site2 = function(x){
+  tibble(
+    read_html(x) %>%
+      html_elements('span.runtime') %>%
+      html_text2() -> duration, 
+    read_html(x) %>%
+      html_elements('div > div.inline-block.ratings-imdb-rating') %>%
+      html_text2() %>%
+      str_replace_all(pattern = "\\n", replacement = "") -> rating, 
+    read_html(x) %>%
+      html_elements('p.sort-num_votes-visible') %>%
+      html_text2() -> votes
+    ) -> movies2
+  
+  return(movies2)
+}
+movie_sites2 = map_df(.x = vector_pages, .f = scrape_movie_site2)
+#worked for duration, rating, votes
+
+scrape_movie_site3 = function(x){
+  tibble(
+    read_html(x) %>%
+      html_elements('span.certificate') %>%
+      html_text2() -> age_classification
+  ) -> movies3
+  
+  return(movies3)
+}
+
+movie_sites3 = map_df(.x = vector_pages, .f = scrape_movie_site3)
+#worked for age_classification
+rm(scrape_movie_site, scrape_movie_site4, scrape_movie_site2, scrape_movie_site3, vector_pages)
+
+movie_sites1
+movie_sites2
+movie_sites3
+```
+
+
+---
+
+# Yelp Reviews for Patterson Cafe
+In assignment 02, I shared with you an RDS file containing four variables and all the reviews that were performed on [Patterson Cafe on Yelp](https://www.yelp.com/biz/pattersons-cafe-oxford). Use what you have learned in class to potentially recreate the same results.
+
+```{r yelp_reviews}
+# when we tried to execute it, we received an error 503
+
+#yelppatterson = read_html('https://www.yelp.com/biz/pattersons-cafe-oxford?start=0')
+#pattersonnames = yelppatterson %>% 
+  #html_elements(css = 'span.fs-block.css-1iikwpv > a.css-1422juy') %>% 
+  #html_text2()
+
+#pattersondate = yelppatterson %>% 
+  #html_elements(css = 'div.margin-t1__09f24__w96jn.margin-b1-5__09f24__NHcQi.border-color--default__09f24__NPAKY') %>% 
+  #html_text2()
+
+#pattersonreviews = yelppatterson %>% 
+  #html_elements(css = 'p.comment__09f24__gu0rG > span') %>%
+  #html_text2()
+
+#pattersonscores = yelppatterson %>% 
+  #html_elements(css = 'div.i-stars__09f24__foihJ') %>%
+  #html_attrs()
+
+# pattersonscores = pattersonscores[2:11]
+# pattersonscores = unlist(pattersonscores, recursive = F)
+# pattersonscores = pattersonscores[seq(from = 2, to = 30, by = 3)]
+# pattersonscores = data.frame(pattersonscores)
+# pattersonscores = pattersonscores[1:10,]
+# pattersonscores = substr(pattersonscores, start = 1, stop = 2)
+# pattersonreviews = tibble(name = pattersonnames, date = pattersondate, review = pattersonreviews, score = pattersonscores)
+# pattersonreviews
+
+
+```
+
